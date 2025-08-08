@@ -15,7 +15,7 @@ const version = new VersionMiddleware("v1")
 
 app.use(express.json())
 app.use(cors.NewCors())
-app.use(express.urlencoded())
+app.use(express.urlencoded({extended:true}))
 app.use(version.VersionHandler())
 
 app.use("/api/v1",UserRouter)

@@ -1,8 +1,6 @@
 import { Pool, QueryResult} from "pg"
 import User from "../models/User"
 
-//``
-
 export interface DatabaseInterface {
     connect(): Promise<void>
     saveUser(obj:User): Promise<User>

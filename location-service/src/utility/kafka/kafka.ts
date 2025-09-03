@@ -1,95 +1,219 @@
-import kafka , { KafkaClient } from 'kafka-node';
+import { Kafka , Producer, ITopicConfig, Admin, Consumer, Message} from 'kafkajs';
 import KafkaOpts from '../../config/kafka';
 
 interface KafkaServiceInterface {
-    InitializeProduce():Promise<void>
+    InitializeProducer():Promise<void>
+    InitializeConsumer():Promise<void>
+    ProduceLocationMessage(message:TopicMessage):Promise<void>
+}
+export interface TopicMessage {
+    key: string,
+    value: string,
+    headers: any
 }
 
-interface Topic {
-    name: string;
-    partitions: number;
-    replicationFactor: number;
-}
-
-interface TopicMessage {
-    topic: string;  
-    messages: string;
-    partition?: number; 
-}
-
+/**
+ * @class kafka Service
+ * @implements {KafkaServiceInterface}
+ */
 class KafkaService implements KafkaServiceInterface {
-    private client: KafkaClient
-    private producer: kafka.Producer | null
-    private Topics: Topic[]
+    private client: Kafka
+    private producer: Producer
+    private consumer: Consumer
+    private Topics: Array<ITopicConfig>
+    private ConsumedTopics: Array<string|RegExp>
     
     constructor() {
-        this.client = new KafkaClient(KafkaOpts);
+        this.client = new Kafka(KafkaOpts)
+        //topics to be produced
         this.Topics = [
             {
-                name: 'location',
-                partitions: 1,
-                replicationFactor: 1
+                topic: 'location', numPartitions: 1, replicationFactor: 1
             }
         ];
-        this.producer = null;
+        //topics to be consumed
+        this.ConsumedTopics = [
+            "ride_requests"
+        ]
+        this.producer = this.client.producer({transactionTimeout: 30000, });
+        this.consumer = this.client.consumer({groupId:'ride-process'});
     }
+    /**
+     * 
+     * @description initializes producer
+     */
+    public InitializeProducer():Promise<void> {
+        return new Promise(async(resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
+            }
+            if(!this.Topics){
+                reject(new Error("topics can't be empty"))
+            }
 
-    public InitializeProduce():Promise<void> {
-        return new Promise((resolve,reject)=>{
-            this.producer = new kafka.Producer(this.client);
-            this.producer.on('ready', () => {
-                console.log("Kafka producer is ready");
-                resolve();
-            });
-            this.producer.on('error', (err) => {
-                console.error("Kafka producer error:", err);
-                reject(err);
-            });
+            //Admin
+            const admin:Admin = this.client.admin()
+            try {
+                await admin.connect()
+                await admin.createTopics({
+                    waitForLeaders: true,
+                    topics: this.Topics
+                })
+            }
+            catch(err){
+                reject(new Error((err as Error).message as string))
+            }
+            finally {
+                await admin.disconnect()
+            }
+            try {
+                await this.producer.connect()
+                resolve()
+            }
+            catch(err){
+                this.closeProducer()
+                reject(new Error((err as Error).message as string))
+            }
+            
+        })
+    }
+    /**
+     * 
+     * @description initializes consumer
+     */
+    public InitializeConsumer():Promise<void> {
+        return new Promise(async(resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
+            }
+            if(!this.ConsumedTopics){
+                reject(new Error("no topic to be consumed"))
+            }
 
-            const topics: kafka.CreateTopicRequest[] =  this.Topics.map(topic => {
-                return {
-                    topic: topic.name,
-                    partitions: topic.partitions,
-                    replicationFactor: topic.replicationFactor
-                };
-            })
-
-            this.client.createTopics(topics, (err, result) => {
-                if (err) {
-                    console.error("Failed to create topics:", err);
-                    return reject(err);
-                }
-                console.log("Topics created successfully:", result);
-            });
+            try {
+                await this.consumer.connect()
+                //Subscribing the topics to be consumes
+                await this.consumer.subscribe({topics:this.ConsumedTopics})
+                //Running the consumer
+                await this.consumer.run({
+                    eachBatchAutoResolve: true,
+                    eachBatch: async({
+                        batch,
+                        resolveOffset,
+                        heartbeat,
+                        commitOffsetsIfNecessary,
+                    }) => {
+                        for(let msg of batch.messages){
+                            resolveOffset(msg.offset)
+                            heartbeat()
+                        }
+                        await commitOffsetsIfNecessary()
+                    }
+                })
+                resolve()
+            }
+            catch(err){
+                this.closeConsumer()
+                reject(new Error((err as Error).message as string))
+            }
         })
     }
 
-    public ProduceLocationMessage(location: TopicMessage): Promise<void> {
-        return new Promise((resolve,reject)=>{
-            if (!this.producer){
-                return reject(new Error("Producer is not initialized"));
+    /**
+     * 
+     * @param Message
+     * @description producing location message
+     */
+    public ProduceLocationMessage(msg: TopicMessage):Promise<void> {
+        return new Promise(async(resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
             }
-
-            const payload: kafka.ProduceRequest[] = [
-                {
-                    topic: location.topic,
-                    messages: location.messages,
-                    partition: 0
+            try {
+                var Msg:Message = {
+                    key:msg.key,
+                    value:msg.value,
+                    headers: msg.headers
                 }
-            ];
-
-            this.producer.send(payload, (err,_)=>{
-                if(err){
-                    console.error("Failed to send message:", err);
-                    return reject(err)
-                }
-
-                console.log("Message sent successfully");
+                await this.producer.send({
+                    topic:'location',
+                    messages: [Msg],
+                    acks: -1,
+                    timeout: 30_000,
+                })
                 resolve()
-            })
+            }
+            catch(err){
+                reject(new Error((err as Error).message as string))
+            }
+        })
+    }
+
+    /**
+     * 
+     * @param Message
+     * @description dispatching driver message
+     */
+    public DispatchDriverMessage(msg:TopicMessage):Promise<void> {
+        return new Promise(async(resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
+            }
+            try {
+                var Msg:Message = {
+                    key:msg.key,
+                    value:msg.value,
+                    headers: msg.headers
+                }
+                await this.producer.send({
+                    topic:'nearby_driver',
+                    messages: [Msg],
+                    acks: -1,
+                    timeout: 30_000,
+                })
+                resolve()
+            }
+            catch(err){
+                reject(new Error((err as Error).message as string))
+            }
+        })
+    }
+
+    /**
+     * @private
+     * @description closes the producer
+     */
+    private closeProducer(): Promise<void> {
+        return new Promise((resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
+            }
+            try {
+                resolve(this.producer.disconnect())
+            }
+            catch(err){
+                reject(new Error((err as Error).message as string))
+            }
+        })
+    }
+
+    /**
+     * @private
+     * @description closes the consumer
+     */
+    private closeConsumer(): Promise<void> {
+        return new Promise((resolve,reject)=>{
+            if(!this.client){
+                reject(new Error("kafka-client not initialized"))
+            }
+            try {
+                resolve(this.consumer.disconnect())
+            }
+            catch(err){
+                reject(new Error((err as Error).message as string))
+            }
         })
     }
 }
-
 
 export default KafkaService;

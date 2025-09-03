@@ -1,5 +1,6 @@
 import {Redis, RedisOptions} from 'ioredis'
 import {config} from 'dotenv'
+import { LocationRedis } from '../../models/location'
 
 config()
 
@@ -24,6 +25,16 @@ RedisClient.on('error',(ch:string,err:string)=>{
 RedisClient.on('close',(ch:string,msg:string)=>{
     console.log("redis closed")
 })
+
+export async function SaveLocationToRedis(user_id:BigInteger,location:LocationRedis){
+    try {
+        await RedisClient.set(user_id.toString(),JSON.stringify(location))
+        console.log("Successfully saved: " + location)
+    }       
+    catch(err){
+       throw err instanceof Error ? err : new Error(String(err));
+    }
+}
 
 export default RedisClient
 

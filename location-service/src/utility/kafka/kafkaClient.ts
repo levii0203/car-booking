@@ -1,6 +1,7 @@
 import KafkaService from "./kafka";
 
 const KafkaClientService = new KafkaService();
-KafkaClientService.InitializeProduce();
+KafkaClientService.InitializeProducer();
+KafkaClientService.InitializeConsumer()
 
 export default KafkaClientService;

@@ -1,4 +1,4 @@
-import { Kafka , Producer, ITopicConfig, Admin, Consumer, Message} from 'kafkajs';
+import { Kafka , Producer, ITopicConfig, Admin, Consumer, Message, Partitioners } from 'kafkajs';
 import KafkaOpts from '../../config/kafka';
 
 interface KafkaServiceInterface {
@@ -18,8 +18,8 @@ export interface TopicMessage {
  */
 class KafkaService implements KafkaServiceInterface {
     private client: Kafka
-    private producer: Producer
-    private consumer: Consumer
+    private producer: Producer|null
+    private consumer: Consumer|null
     private Topics: Array<ITopicConfig>
     private ConsumedTopics: Array<string|RegExp>
     
@@ -29,14 +29,17 @@ class KafkaService implements KafkaServiceInterface {
         this.Topics = [
             {
                 topic: 'location', numPartitions: 1, replicationFactor: 1
-            }
+            },
+            {
+                topic: 'nearby_driver', numPartitions: 1, replicationFactor: 1
+            },
         ];
         //topics to be consumed
         this.ConsumedTopics = [
             "ride_requests"
         ]
-        this.producer = this.client.producer({transactionTimeout: 30000, });
-        this.consumer = this.client.consumer({groupId:'ride-process'});
+        this.producer=null
+        this.consumer=null
     }
     /**
      * 
@@ -55,6 +58,8 @@ class KafkaService implements KafkaServiceInterface {
             const admin:Admin = this.client.admin()
             try {
                 await admin.connect()
+                const topics = await admin.listTopics();
+                console.log("Existing topics:",topics);
                 await admin.createTopics({
                     waitForLeaders: true,
                     topics: this.Topics
@@ -67,11 +72,12 @@ class KafkaService implements KafkaServiceInterface {
                 await admin.disconnect()
             }
             try {
+                this.producer = await this.client.producer({transactionTimeout: 30000, allowAutoTopicCreation:false, createPartitioner: Partitioners.LegacyPartitioner });
                 await this.producer.connect()
                 resolve()
             }
             catch(err){
-                this.closeProducer()
+                //this.closeProducer()
                 reject(new Error((err as Error).message as string))
             }
             
@@ -91,9 +97,17 @@ class KafkaService implements KafkaServiceInterface {
             }
 
             try {
+                this.consumer = await this.client.consumer({
+                    groupId:'ride-process',
+                    heartbeatInterval: 3000,      
+                    sessionTimeout: 30000,       
+                    allowAutoTopicCreation: false
+                });
                 await this.consumer.connect()
                 //Subscribing the topics to be consumes
-                await this.consumer.subscribe({topics:this.ConsumedTopics})
+                for (const topic of this.ConsumedTopics) {
+                    await this.consumer.subscribe({ topic, fromBeginning: false });
+                }
                 //Running the consumer
                 await this.consumer.run({
                     eachBatchAutoResolve: true,
@@ -104,6 +118,7 @@ class KafkaService implements KafkaServiceInterface {
                         commitOffsetsIfNecessary,
                     }) => {
                         for(let msg of batch.messages){
+                            console.log(msg.value)
                             resolveOffset(msg.offset)
                             heartbeat()
                         }
@@ -113,7 +128,7 @@ class KafkaService implements KafkaServiceInterface {
                 resolve()
             }
             catch(err){
-                this.closeConsumer()
+                //this.closeConsumer()
                 reject(new Error((err as Error).message as string))
             }
         })
@@ -135,11 +150,12 @@ class KafkaService implements KafkaServiceInterface {
                     value:msg.value,
                     headers: msg.headers
                 }
-                await this.producer.send({
+                console.log(Msg)
+                await this.producer?.send({
                     topic:'location',
                     messages: [Msg],
                     acks: -1,
-                    timeout: 30_000,
+                    timeout: 30000,
                 })
                 resolve()
             }
@@ -165,7 +181,7 @@ class KafkaService implements KafkaServiceInterface {
                     value:msg.value,
                     headers: msg.headers
                 }
-                await this.producer.send({
+                await this.producer?.send({
                     topic:'nearby_driver',
                     messages: [Msg],
                     acks: -1,
@@ -189,7 +205,7 @@ class KafkaService implements KafkaServiceInterface {
                 reject(new Error("kafka-client not initialized"))
             }
             try {
-                resolve(this.producer.disconnect())
+                resolve(this.producer?.disconnect())
             }
             catch(err){
                 reject(new Error((err as Error).message as string))
@@ -207,7 +223,7 @@ class KafkaService implements KafkaServiceInterface {
                 reject(new Error("kafka-client not initialized"))
             }
             try {
-                resolve(this.consumer.disconnect())
+                resolve(this.consumer?.disconnect())
             }
             catch(err){
                 reject(new Error((err as Error).message as string))

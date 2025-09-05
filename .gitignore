@@ -1,0 +1,25 @@
+#all node_modules
+/user-service/node_modules
+/ride-service/node_modules
+/location-service/node_modules
+/api-gateway/node_modules
+
+
+/**/dist
+/**/build
+
+# all env
+/**/*.env
+!/**/*.development.env
+!/**/*.example.env
+/user-service/.env
+/ride-service/.env
+/location-service/.env
+
+# files
+/*.txt
+/**/*.txt
+/*.md
+/**/*.md
+!README.md
+

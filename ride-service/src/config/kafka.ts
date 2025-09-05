@@ -1,17 +1,18 @@
-import {KafkaClientOptions} from "kafka-node"
+import { KafkaConfig, logLevel } from "kafkajs";
+import { config } from "dotenv";
 
-const  KafkaOpts:KafkaClientOptions = {
-    kafkaHost: `${process.env.KAFKA_HOST}:${process.env.KAFKA_PORT}`|| "localhost:9092",
-    connectTimeout:10000,
-    requestTimeout: 15000,
-    autoConnect:true,
-    idleConnection: 30000,
-    connectRetryOptions: {
+config()
+
+const KafkaOpts:KafkaConfig = {
+    clientId:"ride-service",
+    brokers: [`${process.env.KAFKA_HOST}:${process.env.KAFKA_PORT}`|| "localhost:29092"],
+    connectionTimeout: 30000,
+    requestTimeout: 60000,
+    retry: {
         retries: 5,
-        factor: 2,
-        minTimeout: 1000,
-        maxTimeout: 15000
-    }
-}
+        initialRetryTime: 3000,
+    },
+};
 
 export default KafkaOpts;
+

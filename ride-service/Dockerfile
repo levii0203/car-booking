@@ -2,7 +2,7 @@
 FROM node:18
 
 # Set working directory inside the container
-WORKDIR /app/location-service
+WORKDIR /app/ride-service
 
 # Copy package.json and package-lock.json (if exists) to install dependencies
 COPY package*.json ./
@@ -20,7 +20,7 @@ RUN npm install -g typescript nodemon
 RUN tsc
 
 # Expose port if your location service has an HTTP API (optional, adjust as needed)
-EXPOSE 5000
+EXPOSE 8080
 
 # Command to run the application with nodemon for development
 CMD ["nodemon", "src/index.ts"]

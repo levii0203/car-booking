@@ -11,6 +11,16 @@ const Routes = [
         }
     }
    } as Route,
+   {
+    url:'/ride',
+    proxy: {
+        target:"http:localhost:8080/",
+        changeOrigin: true,
+        pathRewrite: {
+            ['^/ride']:''
+        }
+    }
+   } as Route
 
 ]
 

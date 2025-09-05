@@ -19,7 +19,7 @@ RedisClient.on('connect',()=>{
 })
 
 RedisClient.on('error',(ch:string,err:string)=>{
-    throw new Error(`REDIS_FAILED_FUNCTION: ${err as string}`)
+    console.log(`REDIS_FAILED_FUNCTION: ${err as string}`)
 })
 
 RedisClient.on('close',(ch:string,msg:string)=>{

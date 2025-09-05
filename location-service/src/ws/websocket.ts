@@ -1,7 +1,7 @@
 import {WebSocketServer} from "ws";
 import WssConfig from '../config/wss';
 import { TopicMessage } from "../utility/kafka/kafka";
-import KafkaClientService from "../utility/kafka/kafkaClient"
+import KafkaClientService from "../workers/kafkaClient"
 import { LocationRedis } from "../models/location";
 import { SaveLocationToRedis } from "../utility/redis/redis";
 
@@ -25,7 +25,8 @@ class WebSocketService {
             })
             ws.on("message",async(message)=>{
                 const res = JSON.parse(message.toString());
-                if (res.type==="geometry" && res.longitude && res.latitude && res.user_id){
+                if (res.type==="geometry"){
+                    console.log(res)
                     const location:LocationRedis = {longitude: res.longitude, latitude: res.latitude, created_at:Date.now()}
                     await SaveLocationToRedis(res.user_id, location)
                     const topic_msg: TopicMessage = {key:res.user_id,value:JSON.stringify(location),headers:{}}
